@@ -139,6 +139,7 @@ if (import.meta.main) {
     await api.addTask({
       content: createContent(liveInfo),
       dueString: createDueString(liveInfo),
+      description: liveInfo.descriptionDetail,
       projectId: config().TODOIST_TIGERS_PROJECT_ID,
     });
   }
