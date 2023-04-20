@@ -35,6 +35,16 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
     .replace(/\s+/g, " ");
   console.log(date);
 
+  // separate month and day from date
+  const [month, day] = date!.split(" ")[0].split("/");
+  // get current date
+  const now = new Date();
+  // if month and day is not current month and day, exit
+  if (now.getMonth() + 1 !== parseInt(month) || now.getDate() !== parseInt(day)) {
+    console.log("No live information found.");
+    Deno.exit(0);
+  }
+
   // get trs from table.basic-table > tbody > tr
   const trs = element.querySelectorAll("table.basic-table > tbody > tr");
   for (const tr of trs) {
@@ -135,6 +145,20 @@ function createDueString(liveInfo: LiveInfo): string {
 if (import.meta.main) {
   const liveList = await getRecentTigersLiveList();
   const api = new TodoistApi(config().TODOIST_API_TOKEN);
+
+  // if liveList is empty, exit
+  if (liveList.length === 0) {
+    console.log("No live information found.");
+
+    // add empty task to Todoist
+    await api.addTask({
+      content: "本日視聴可能な野球放送はありません。",
+      dueString: "today",
+      projectId: config().TODOIST_TIGERS_PROJECT_ID,
+    });
+    Deno.exit(0);
+  }
+
   for (const liveInfo of liveList) {
     await api.addTask({
       content: createContent(liveInfo),
