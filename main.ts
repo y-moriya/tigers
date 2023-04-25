@@ -3,7 +3,16 @@ import {
   Element,
 } from "https://deno.land/x/deno_dom@v0.1.37/deno-dom-wasm.ts";
 import { config } from "https://deno.land/x/dotenv/mod.ts";
-import { TodoistApi, TodoistRequestError } from "npm:@doist/todoist-api-typescript";
+import {
+  AddTaskArgs,
+  TodoistApi,
+  TodoistRequestError,
+} from "npm:@doist/todoist-api-typescript";
+import Logger from "https://deno.land/x/logger/logger.ts";
+
+// init logger
+const logger = new Logger();
+await logger.initFileLogger("./logs");
 
 const TIGERS_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/live.html";
 const TIGERS_LIVE_LIST_SELECTOR = "div.media-list.clearfix";
@@ -33,15 +42,17 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
   // get date information from div.air-date
   const date = element.querySelector("div.air-date")?.textContent.trim()
     .replace(/\s+/g, " ");
-  console.log(date);
+  logger.info(date);
 
   // separate month and day from date
   const [month, day] = date!.split(" ")[0].split("/");
   // get current date
   const now = new Date();
   // if month and day is not current month and day, exit
-  if (now.getMonth() + 1 !== parseInt(month) || now.getDate() !== parseInt(day)) {
-    console.log("No live information found.");
+  if (
+    now.getMonth() + 1 !== parseInt(month) || now.getDate() !== parseInt(day)
+  ) {
+    logger.info("No live information found.");
     Deno.exit(0);
   }
 
@@ -113,7 +124,7 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
     };
 
     // log liveInfo
-    console.log(liveInfo);
+    logger.info(liveInfo);
 
     // push to result array
     result.push(liveInfo);
@@ -141,41 +152,47 @@ function createDueString(liveInfo: LiveInfo): string {
   return `${date}@${time}`;
 }
 
-// Learn more at https://deno.land/manual/examples/module_metadata#concepts
+// add task to Todoist function
+async function addTask(api: TodoistApi, task: AddTaskArgs): Promise<void> {
+  try {
+    logger.info(task);
+    await api.addTask(task);
+  } catch (e) {
+    if (e instanceof TodoistRequestError) {
+      logger.error(
+        `${e.message}, ${e.httpStatusCode}, ${e.responseData}, isAuthError: ${e.isAuthenticationError()}`,
+      );
+    } else {
+      throw e;
+    }
+  }
+}
+
 if (import.meta.main) {
   const liveList = await getRecentTigersLiveList();
   const api = new TodoistApi(config().TODOIST_API_TOKEN);
 
   // if liveList is empty, exit
   if (liveList.length === 0) {
-    console.log("No live information found.");
+    logger.info("No live information found.");
 
     // add empty task to Todoist
-    await api.addTask({
+    const emptyTask = {
       content: "本日視聴可能な野球放送はありません。",
       dueString: "today",
       projectId: config().TODOIST_TIGERS_PROJECT_ID,
-    });
+    };
+    await addTask(api, emptyTask);
     Deno.exit(0);
   }
 
   for (const liveInfo of liveList) {
-    // try-catch for Todoist API
-    try {
-      // add task to Todoist
-      const task = {
-        content: createContent(liveInfo),
-        dueString: createDueString(liveInfo),
-        description: liveInfo.descriptionDetail,
-        projectId: config().TODOIST_TIGERS_PROJECT_ID,
-      };
-      console.log(task);
-      await api.addTask(task);
-    } catch (e) {
-      if (e instanceof TodoistRequestError) {
-        console.log(`${e.message}, ${e.httpStatusCode}, ${e.responseData}, ${e.isAuthenticationError()}`);
-      }
-    }
-
+    const task = {
+      content: createContent(liveInfo),
+      dueString: createDueString(liveInfo),
+      description: liveInfo.descriptionDetail,
+      projectId: config().TODOIST_TIGERS_PROJECT_ID,
+    };
+    await addTask(api, task);
   }
 }
