@@ -110,7 +110,7 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
     // get descriptionDetail from p.media-detail-note
     const descriptionDetail = descriptionDoc!.querySelector(
       "p.media-detail-note",
-    )?.textContent;
+    )?.innerText.replaceAll("\n", " ");
 
     // create LiveInfo object from above information
     const liveInfo: LiveInfo = {
