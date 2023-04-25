@@ -3,7 +3,7 @@ import {
   Element,
 } from "https://deno.land/x/deno_dom@v0.1.37/deno-dom-wasm.ts";
 import { config } from "https://deno.land/x/dotenv/mod.ts";
-import { TodoistApi } from "npm:@doist/todoist-api-typescript";
+import { TodoistApi, TodoistRequestError } from "npm:@doist/todoist-api-typescript";
 
 const TIGERS_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/live.html";
 const TIGERS_LIVE_LIST_SELECTOR = "div.media-list.clearfix";
@@ -136,7 +136,7 @@ function createDueString(liveInfo: LiveInfo): string {
   // separate date from liveInfo.date
   const date = liveInfo.date.split(" ")[0];
   // separate time from liveInfo.timetable
-  const time = liveInfo.timetable.split(" ")[0].replace("-", "");
+  const time = liveInfo.timetable.split("-")[0];
 
   return `${date}@${time}`;
 }
@@ -160,11 +160,22 @@ if (import.meta.main) {
   }
 
   for (const liveInfo of liveList) {
-    await api.addTask({
-      content: createContent(liveInfo),
-      dueString: createDueString(liveInfo),
-      description: liveInfo.descriptionDetail,
-      projectId: config().TODOIST_TIGERS_PROJECT_ID,
-    });
+    // try-catch for Todoist API
+    try {
+      // add task to Todoist
+      const task = {
+        content: createContent(liveInfo),
+        dueString: createDueString(liveInfo),
+        description: liveInfo.descriptionDetail,
+        projectId: config().TODOIST_TIGERS_PROJECT_ID,
+      };
+      console.log(task);
+      await api.addTask(task);
+    } catch (e) {
+      if (e instanceof TodoistRequestError) {
+        console.log(`${e.message}, ${e.httpStatusCode}, ${e.responseData}, ${e.isAuthenticationError()}`);
+      }
+    }
+
   }
 }
