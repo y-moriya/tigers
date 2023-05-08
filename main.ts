@@ -52,8 +52,7 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
   if (
     now.getMonth() + 1 !== parseInt(month) || now.getDate() !== parseInt(day)
   ) {
-    logger.info("No live information found.");
-    Deno.exit(0);
+    return result;
   }
 
   // get trs from table.basic-table > tbody > tr
