@@ -8,7 +8,7 @@ import {
   TodoistApi,
   TodoistRequestError,
 } from "npm:@doist/todoist-api-typescript";
-import Logger from "https://deno.land/x/logger/logger.ts";
+import Logger from "https://deno.land/x/logger@v1.1.0/logger.ts";
 
 // init logger
 const logger = new Logger();
