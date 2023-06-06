@@ -151,6 +151,10 @@ function createDueString(liveInfo: LiveInfo): string {
   return `${date}@${time}`;
 }
 
+function createDescription(liveInfo: LiveInfo): string {
+  return `${liveInfo.timetable}\n${liveInfo.descriptionDetail}`;
+}
+
 // add task to Todoist function
 async function addTask(api: TodoistApi, task: AddTaskArgs): Promise<void> {
   try {
@@ -189,7 +193,7 @@ if (import.meta.main) {
     const task = {
       content: createContent(liveInfo),
       dueString: createDueString(liveInfo),
-      description: liveInfo.descriptionDetail,
+      description: createDescription(liveInfo),
       projectId: config().TODOIST_TIGERS_PROJECT_ID,
     };
     await addTask(api, task);
