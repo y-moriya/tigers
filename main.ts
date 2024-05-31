@@ -1,18 +1,13 @@
 import {
   DOMParser,
-  Element,
+  type Element,
 } from "https://deno.land/x/deno_dom@v0.1.37/deno-dom-wasm.ts";
-import { config } from "https://deno.land/x/dotenv/mod.ts";
 import {
-  AddTaskArgs,
+  type AddTaskArgs,
   TodoistApi,
   TodoistRequestError,
 } from "npm:@doist/todoist-api-typescript";
-import Logger from "https://deno.land/x/logger@v1.1.0/logger.ts";
-
-// init logger
-const logger = new Logger();
-await logger.initFileLogger("./logs");
+import "https://deno.land/x/dotenv@v3.2.2/load.ts";
 
 const TIGERS_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/live.html";
 const TIGERS_LIVE_LIST_SELECTOR = "div.media-list.clearfix";
@@ -36,21 +31,26 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
   const res = await fetch(TIGERS_LIVE_LIST_URL);
   const html = await res.text();
   const doc = new DOMParser().parseFromString(html, "text/html");
-  const recentLiveList = doc!.querySelector(TIGERS_LIVE_LIST_SELECTOR);
+  const recentLiveList = doc?.querySelector(TIGERS_LIVE_LIST_SELECTOR);
 
   const element = recentLiveList as Element;
   // get date information from div.air-date
   const date = element.querySelector("div.air-date")?.textContent.trim()
     .replace(/\s+/g, " ");
-  logger.info(date);
+  console.info(date);
+
+  if (!date) {
+    return result;
+  }
 
   // separate month and day from date
-  const [month, day] = date!.split(" ")[0].split("/");
+  const [month, day] = date.split(" ")[0].split("/");
   // get current date
   const now = new Date();
   // if month and day is not current month and day, exit
   if (
-    now.getMonth() + 1 !== parseInt(month) || now.getDate() !== parseInt(day)
+    now.getMonth() + 1 !== Number.parseInt(month) ||
+    now.getDate() !== Number.parseInt(day)
   ) {
     return result;
   }
@@ -61,7 +61,7 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
     const trElement = tr as Element;
 
     // get broadcast type from tr > td:nth-child(1)
-    const broadcastType = trElement!.querySelector("td:nth-child(1)")
+    const broadcastType = trElement?.querySelector("td:nth-child(1)")
       ?.textContent;
 
     // continue if broadcast type is "CS"
@@ -70,7 +70,7 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
     }
 
     // get broadcaster from trElement > td:nth-child(2)
-    const broadcaster = trElement!.querySelector("td:nth-child(2)")
+    const broadcaster = trElement?.querySelector("td:nth-child(2)")
       ?.textContent;
 
     // continue if broadcaster match "J SPORTS \d"
@@ -84,7 +84,7 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
     }
 
     // get label img alt from trElement > td.timetable > img
-    const label = trElement!.querySelector("td.timetable > img")
+    const label = trElement?.querySelector("td.timetable > img")
       ?.getAttribute("alt");
 
     // continue if label is "録画"
@@ -93,11 +93,11 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
     }
 
     // get timetable from trElement > td.timetable textContent
-    const timetable = trElement!.querySelector("td.timetable")?.textContent;
+    const timetable = trElement?.querySelector("td.timetable")?.textContent;
 
     // get description url from trElement > td:nth-child(4) > a.href
     const descriptionUrl = DESCRIPTION_URL_PREFIX +
-      trElement!.querySelector("td:nth-child(4) > a")?.getAttribute("href");
+      trElement?.querySelector("td:nth-child(4) > a")?.getAttribute("href");
 
     // get description from description url
     const descriptionRes = await fetch(descriptionUrl);
@@ -107,23 +107,23 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
       "text/html",
     );
     // get descriptionDetail from p.media-detail-note
-    const descriptionDetail = descriptionDoc!.querySelector(
+    const descriptionDetail = descriptionDoc?.querySelector(
       "p.media-detail-note",
     )?.innerText.replaceAll("\n", " ");
 
     // create LiveInfo object from above information
     const liveInfo: LiveInfo = {
-      date: date!,
-      broadcastType: broadcastType!,
-      broadcaster: broadcaster!,
-      label: label!,
-      timetable: timetable!,
-      descriptionUrl: descriptionUrl!,
-      descriptionDetail: descriptionDetail!,
+      date: date,
+      broadcastType: broadcastType ?? "",
+      broadcaster: broadcaster ?? "",
+      label: label ?? "",
+      timetable: timetable ?? "",
+      descriptionUrl: descriptionUrl,
+      descriptionDetail: descriptionDetail ?? "",
     };
 
     // log liveInfo
-    logger.info(liveInfo);
+    console.info(liveInfo);
 
     // push to result array
     result.push(liveInfo);
@@ -158,11 +158,11 @@ function createDescription(liveInfo: LiveInfo): string {
 // add task to Todoist function
 async function addTask(api: TodoistApi, task: AddTaskArgs): Promise<void> {
   try {
-    logger.info(task);
+    console.info(task);
     await api.addTask(task);
   } catch (e) {
     if (e instanceof TodoistRequestError) {
-      logger.error(
+      console.error(
         `${e.message}, ${e.httpStatusCode}, ${e.responseData}, isAuthError: ${e.isAuthenticationError()}`,
       );
     } else {
@@ -171,19 +171,20 @@ async function addTask(api: TodoistApi, task: AddTaskArgs): Promise<void> {
   }
 }
 
-if (import.meta.main) {
+async function main() {
   const liveList = await getRecentTigersLiveList();
-  const api = new TodoistApi(config().TODOIST_API_TOKEN);
+  const api = new TodoistApi(Deno.env.get("TODOIST_API_TOKEN") as string);
+  const projectId = Deno.env.get("TODOIST_TIGERS_PROJECT_ID") as string;
 
   // if liveList is empty, exit
   if (liveList.length === 0) {
-    logger.info("No live information found.");
+    console.info("No live information found.");
 
     // add empty task to Todoist
     const emptyTask = {
       content: "本日視聴可能な野球放送はありません。",
       dueString: "today",
-      projectId: config().TODOIST_TIGERS_PROJECT_ID,
+      projectId: projectId,
     };
     await addTask(api, emptyTask);
     Deno.exit(0);
@@ -194,8 +195,10 @@ if (import.meta.main) {
       content: createContent(liveInfo),
       dueString: createDueString(liveInfo),
       description: createDescription(liveInfo),
-      projectId: config().TODOIST_TIGERS_PROJECT_ID,
+      projectId: projectId,
     };
     await addTask(api, task);
   }
 }
+
+Deno.cron("Get broadcast information for tigers.", "0 19 * * *", await main);
