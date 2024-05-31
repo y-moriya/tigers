@@ -47,6 +47,9 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
   const [month, day] = date.split(" ")[0].split("/");
   // get current date
   const now = new Date();
+  // now(UTC) to JST
+  now.setHours(now.getHours() + 9);
+
   // if month and day is not current month and day, exit
   if (
     now.getMonth() + 1 !== Number.parseInt(month) ||
