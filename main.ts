@@ -201,4 +201,6 @@ async function main() {
   }
 }
 
-Deno.cron("Get broadcast information for tigers.", "0 19 * * *", await main);
+Deno.cron("Get broadcast information for tigers.", "0 19 * * *", async () => {
+  await main();
+});
