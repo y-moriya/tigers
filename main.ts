@@ -187,7 +187,7 @@ async function main() {
       projectId: projectId,
     };
     await addTask(api, emptyTask);
-    Deno.exit(0);
+    return;
   }
 
   for (const liveInfo of liveList) {
