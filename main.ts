@@ -175,6 +175,12 @@ async function addTask(api: TodoistApi, task: AddTaskArgs): Promise<void> {
 }
 
 async function main() {
+  const runMainProcess = Deno.env.get("RUN_MAIN_PROCESS") === "true";
+  if (!runMainProcess) {
+    console.info("Not run main process.");
+    return;
+  }
+
   const liveList = await getRecentTigersLiveList();
   const api = new TodoistApi(Deno.env.get("TODOIST_API_TOKEN") as string);
   const projectId = Deno.env.get("TODOIST_TIGERS_PROJECT_ID") as string;
