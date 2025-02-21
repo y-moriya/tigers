@@ -216,7 +216,7 @@ async function main() {
   }
 }
 
-Deno.cron("Get today's live information for tigers", "0 19 * * *", async () => {
+Deno.cron("Get todays live information for tigers", "0 19 * * *", async () => {
   console.info("Start crawling.");
   await main();
 });
