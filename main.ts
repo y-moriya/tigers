@@ -81,8 +81,14 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
       continue;
     }
 
-    // continue if broadcaster is "DAZN" or "虎テレ"
-    if (broadcaster === "DAZN" || broadcaster === "虎テレ") {
+    // continue if broadcaster is "DAZN"
+    if (broadcaster === "DAZN") {
+      continue;
+    }
+
+    // continue if broadcaster is "虎テレ" if TORA_TV is not true
+    const TORA_TV = Deno.env.get("TORA_TV") === "true";
+    if (!TORA_TV && broadcaster === "虎テレ") {
       continue;
     }
 
