@@ -9,7 +9,8 @@ import {
 } from "npm:@doist/todoist-api-typescript";
 import "https://deno.land/x/dotenv@v3.2.2/load.ts";
 
-const TIGERS_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/live.html";
+const TIGERS1_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/live.html";
+const TIGERS2_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/farmlive.html";
 const TIGERS_LIVE_LIST_SELECTOR = "div.media-list.clearfix";
 const DESCRIPTION_URL_PREFIX = "https:";
 
@@ -22,13 +23,14 @@ interface LiveInfo {
   timetable: string;
   descriptionUrl: string;
   descriptionDetail: string;
+  isFarm: boolean;
 }
 
-export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
+export async function getRecentTigersLiveList(liveListUrl: string): Promise<LiveInfo[]> {
   // define result array
   const result: LiveInfo[] = [];
 
-  const res = await fetch(TIGERS_LIVE_LIST_URL);
+  const res = await fetch(liveListUrl);
   const html = await res.text();
   const doc = new DOMParser().parseFromString(html, "text/html");
   const recentLiveList = doc?.querySelector(TIGERS_LIVE_LIST_SELECTOR);
@@ -129,6 +131,7 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
       timetable: timetable ?? "",
       descriptionUrl: descriptionUrl,
       descriptionDetail: descriptionDetail ?? "",
+      isFarm: liveListUrl === TIGERS2_LIVE_LIST_URL,
     };
 
     // log liveInfo
@@ -147,7 +150,8 @@ export async function getRecentTigersLiveList(): Promise<LiveInfo[]> {
 
 // create content from live information
 function createContent(liveInfo: LiveInfo): string {
-  return `${liveInfo.broadcaster} ${liveInfo.date}`;
+  const farmStr = liveInfo.isFarm ? "2軍" : "1軍";
+  return `${liveInfo.broadcaster} ${liveInfo.date} ${farmStr}`;
 }
 
 // create due string from live information
@@ -157,11 +161,11 @@ function createDueString(liveInfo: LiveInfo): string {
   // separate time from liveInfo.timetable
   const time = liveInfo.timetable.split("-")[0];
 
-  return `${date}@${time}`;
+  return `${date} @${time} `;
 }
 
 function createDescription(liveInfo: LiveInfo): string {
-  return `${liveInfo.timetable}\n${liveInfo.descriptionDetail}`;
+  return `${liveInfo.timetable} \n${liveInfo.descriptionDetail} `;
 }
 
 // add task to Todoist function
@@ -172,7 +176,7 @@ async function addTask(api: TodoistApi, task: AddTaskArgs): Promise<void> {
   } catch (e) {
     if (e instanceof TodoistRequestError) {
       console.error(
-        `${e.message}, ${e.httpStatusCode}, ${e.responseData}, isAuthError: ${e.isAuthenticationError()}`,
+        `${e.message}, ${e.httpStatusCode}, ${e.responseData}, isAuthError: ${e.isAuthenticationError()} `,
       );
     } else {
       throw e;
@@ -187,7 +191,9 @@ async function main() {
     return;
   }
 
-  const liveList = await getRecentTigersLiveList();
+  const liveList1 = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL);
+  const liveList2 = await getRecentTigersLiveList(TIGERS2_LIVE_LIST_URL);
+  const liveList = liveList1.concat(liveList2);
   const api = new TodoistApi(Deno.env.get("TODOIST_API_TOKEN") as string);
   const projectId = Deno.env.get("TODOIST_TIGERS_PROJECT_ID") as string;
 
