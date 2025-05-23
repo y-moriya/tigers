@@ -26,42 +26,14 @@ interface LiveInfo {
   isFarm: boolean;
 }
 
-export async function getRecentTigersLiveList(liveListUrl: string): Promise<LiveInfo[]> {
-  // define result array
-  const result: LiveInfo[] = [];
-
-  const res = await fetch(liveListUrl);
-  const html = await res.text();
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const recentLiveList = doc?.querySelector(TIGERS_LIVE_LIST_SELECTOR);
-
-  const element = recentLiveList as Element;
+async function getEachLiveInfo(isFarm: boolean, liveElement: Element): Promise<LiveInfo[]> {
   // get date information from div.air-date
-  const date = element.querySelector("div.air-date")?.textContent.trim()
+  const date = liveElement.querySelector("div.air-date")?.textContent.trim()
     .replace(/\s+/g, " ");
-  console.info(date);
-
-  if (!date) {
-    return result;
-  }
-
-  // separate month and day from date
-  const [month, day] = date.split(" ")[0].split("/");
-  // get current date
-  const now = new Date();
-  // now(UTC) to JST
-  now.setHours(now.getHours() + 9);
-
-  // if month and day is not current month and day, exit
-  if (
-    now.getMonth() + 1 !== Number.parseInt(month) ||
-    now.getDate() !== Number.parseInt(day)
-  ) {
-    return result;
-  }
+  const result = [];
 
   // get trs from table.basic-table > tbody > tr
-  const trs = element.querySelectorAll("table.basic-table > tbody > tr");
+  const trs = liveElement.querySelectorAll("table.basic-table > tbody > tr");
   for (const tr of trs) {
     const trElement = tr as Element;
 
@@ -112,7 +84,9 @@ export async function getRecentTigersLiveList(liveListUrl: string): Promise<Live
 
     // get description from description url
     const descriptionRes = await fetch(descriptionUrl);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     const descriptionHtml = await descriptionRes.text();
+
     const descriptionDoc = new DOMParser().parseFromString(
       descriptionHtml,
       "text/html",
@@ -124,24 +98,45 @@ export async function getRecentTigersLiveList(liveListUrl: string): Promise<Live
 
     // create LiveInfo object from above information
     const liveInfo: LiveInfo = {
-      date: date,
+      date: date!,
       broadcastType: broadcastType ?? "",
       broadcaster: broadcaster ?? "",
       label: label ?? "",
       timetable: timetable ?? "",
       descriptionUrl: descriptionUrl,
       descriptionDetail: descriptionDetail ?? "",
-      isFarm: liveListUrl === TIGERS2_LIVE_LIST_URL,
+      isFarm: isFarm,
     };
 
     // log liveInfo
     console.info(liveInfo);
 
-    // push to result array
     result.push(liveInfo);
+  }
 
-    // wait 1 second
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  return result;
+}
+
+export async function getRecentTigersLiveList(liveListUrl: string): Promise<LiveInfo[]> {
+  // define result array
+  const result: LiveInfo[] = [];
+
+  const res = await fetch(liveListUrl);
+  const html = await res.text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const recentLiveList = doc?.querySelectorAll(TIGERS_LIVE_LIST_SELECTOR);
+
+  if (!recentLiveList) {
+    throw new Error("Recent live list not found");
+  }
+
+  // get first element from recentLiveList
+  const recentLiveListArray = Array.from(recentLiveList);
+
+  for (const recentLiveList of recentLiveListArray) {
+    const liveInfo = await getEachLiveInfo(liveListUrl === TIGERS2_LIVE_LIST_URL, recentLiveList as Element);
+    // push liveInfo to result array
+    result.push(...liveInfo);
   }
 
   // return result array
@@ -165,7 +160,7 @@ function createDueString(liveInfo: LiveInfo): string {
 }
 
 function createDescription(liveInfo: LiveInfo): string {
-  return `${liveInfo.timetable} \n${liveInfo.descriptionDetail} `;
+  return `${liveInfo.timetable} \n${liveInfo.descriptionDetail} \n${liveInfo.descriptionUrl}`;
 }
 
 // add task to Todoist function
@@ -197,21 +192,23 @@ async function main() {
   const api = new TodoistApi(Deno.env.get("TODOIST_API_TOKEN") as string);
   const projectId = Deno.env.get("TODOIST_TIGERS_PROJECT_ID") as string;
 
-  // if liveList is empty, exit
-  if (liveList.length === 0) {
-    console.info("No live information found.");
-
-    // add empty task to Todoist
-    const emptyTask = {
-      content: "本日視聴可能な野球放送はありません。",
-      dueString: "today",
-      projectId: projectId,
-    };
-    await addTask(api, emptyTask);
-    return;
-  }
+  // get existing tasks from Todoist
+  const existingTasks = await api.getTasks({ projectId: projectId });
+  const existingTaskBroadcastIds = existingTasks.map((task) => {
+    const description = task.description;
+    const match = description?.match(/https:\/\/hanshintigers\.jp\/news\/media\/live\d+\.html/);
+    return match ? match[0] : null;
+  });
+  console.log(existingTaskBroadcastIds);
 
   for (const liveInfo of liveList) {
+    // check if liveInfo is already in Todoist
+    const descriptionUrl = liveInfo.descriptionUrl;
+    if (existingTaskBroadcastIds.includes(descriptionUrl)) {
+      console.info("Already exists in Todoist.");
+      continue;
+    }
+
     const task = {
       content: createContent(liveInfo),
       dueString: createDueString(liveInfo),
@@ -219,6 +216,7 @@ async function main() {
       projectId: projectId,
     };
     await addTask(api, task);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 }
 
