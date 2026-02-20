@@ -3,10 +3,9 @@ import {
   type Element,
 } from "https://deno.land/x/deno_dom@v0.1.37/deno-dom-wasm.ts";
 import {
-  type AddTaskArgs,
   TodoistApi,
   TodoistRequestError,
-} from "npm:@doist/todoist-api-typescript";
+} from "npm:@doist/todoist-api-typescript@latest";
 import "https://deno.land/x/dotenv@v3.2.2/load.ts";
 
 const TIGERS1_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/live.html";
@@ -164,7 +163,7 @@ function createDescription(liveInfo: LiveInfo): string {
 }
 
 // add task to Todoist function
-async function addTask(api: TodoistApi, task: AddTaskArgs): Promise<void> {
+async function addTask(api: TodoistApi, task: Parameters<TodoistApi["addTask"]>[0]): Promise<void> {
   try {
     console.info(task);
     await api.addTask(task);
@@ -192,8 +191,15 @@ async function main() {
   const api = new TodoistApi(Deno.env.get("TODOIST_API_TOKEN") as string);
   const projectId = Deno.env.get("TODOIST_TIGERS_PROJECT_ID") as string;
 
-  // get existing tasks from Todoist
-  const existingTasks = await api.getTasks({ projectId: projectId });
+  // 全既存タスクをページネーションで取得
+  const existingTasks = [];
+  let cursor: string | null | undefined = undefined;
+  do {
+    const response = await api.getTasks({ projectId: projectId, cursor: cursor ?? undefined });
+    existingTasks.push(...response.results);
+    cursor = response.nextCursor;
+  } while (cursor);
+
   const existingTaskBroadcastIds = existingTasks.map((task) => {
     const description = task.description;
     const match = description?.match(/https:\/\/hanshintigers\.jp\/news\/media\/live\d+\.html/);
