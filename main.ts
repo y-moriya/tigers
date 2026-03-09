@@ -188,6 +188,10 @@ async function main() {
   const liveList1 = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL);
   const liveList2 = await getRecentTigersLiveList(TIGERS2_LIVE_LIST_URL);
   const liveList = liveList1.concat(liveList2);
+  // 重複を除去（descriptionUrlが同じものは除去）
+  const uniqueLiveList = liveList.filter((live, index, self) =>
+    self.findIndex(l => l.descriptionUrl === live.descriptionUrl) === index
+  );
   const api = new TodoistApi(Deno.env.get("TODOIST_API_TOKEN") as string);
   const projectId = Deno.env.get("TODOIST_TIGERS_PROJECT_ID") as string;
 
@@ -207,7 +211,7 @@ async function main() {
   });
   console.log(existingTaskBroadcastIds);
 
-  for (const liveInfo of liveList) {
+  for (const liveInfo of uniqueLiveList) {
     // check if liveInfo is already in Todoist
     const descriptionUrl = liveInfo.descriptionUrl;
     if (existingTaskBroadcastIds.includes(descriptionUrl)) {
