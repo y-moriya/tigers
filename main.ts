@@ -179,12 +179,6 @@ async function addTask(api: TodoistApi, task: Parameters<TodoistApi["addTask"]>[
 }
 
 async function main() {
-  const runMainProcess = Deno.env.get("RUN_MAIN_PROCESS") === "true";
-  if (!runMainProcess) {
-    console.info("Not run main process.");
-    return;
-  }
-
   const liveList1 = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL);
   // const liveList2 = await getRecentTigersLiveList(TIGERS2_LIVE_LIST_URL);
   // const liveList = liveList1.concat(liveList2);
@@ -226,7 +220,22 @@ async function main() {
   }
 }
 
-Deno.cron("Get todays live information for tigers", "0 19 * * *", async () => {
-  console.info("Start crawling.");
-  await main();
-});
+// メインの処理
+if (import.meta.main) {
+  Deno.cron("Get todays live information for tigers", "0 19 * * *", async () => {
+    console.info("Start crawling.");
+    await main();
+  });
+
+  // Deno Deployでデプロイメントをアクティブに保ち、
+  // ヘルスチェックを可能にするためのダミーサーバー
+  Deno.serve((_req) => {
+    return new Response(
+      "SportsNavi News Fetcher is running. Cron schedule: 0 19 * * *",
+      {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      },
+    );
+  });
+}
