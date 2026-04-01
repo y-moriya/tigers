@@ -59,6 +59,11 @@ async function getEachLiveInfo(isFarm: boolean, liveElement: Element): Promise<L
       continue;
     }
 
+    // continue if broadcaster is "J SPORTSオンデマンド"
+    if (broadcaster === "J SPORTSオンデマンド") {
+      continue;
+    }
+
     // continue if broadcaster is "虎テレ" if TORA_TV is not true
     const TORA_TV = Deno.env.get("TORA_TV") === "true";
     if (!TORA_TV && broadcaster === "虎テレ") {
