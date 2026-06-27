@@ -25,11 +25,11 @@ interface LiveInfo {
   isFarm: boolean;
 }
 
-async function getEachLiveInfo(isFarm: boolean, liveElement: Element): Promise<LiveInfo[]> {
+async function getEachLiveInfo(isFarm: boolean, liveElement: Element, fetchDetail = false): Promise<LiveInfo[]> {
   // get date information from div.air-date
   const date = liveElement.querySelector("div.air-date")?.textContent.trim()
     .replace(/\s+/g, " ");
-  const result = [];
+  const result: LiveInfo[] = [];
 
   // get trs from table.basic-table > tbody > tr
   const trs = liveElement.querySelectorAll("table.basic-table > tbody > tr");
@@ -38,78 +38,50 @@ async function getEachLiveInfo(isFarm: boolean, liveElement: Element): Promise<L
 
     // get broadcast type from tr > td:nth-child(1)
     const broadcastType = trElement?.querySelector("td:nth-child(1)")
-      ?.textContent;
-
-    // continue if broadcast type is "CS"
-    if (broadcastType === "CS") {
-      continue;
-    }
+      ?.textContent ?? "";
 
     // get broadcaster from trElement > td:nth-child(2)
     const broadcaster = trElement?.querySelector("td:nth-child(2)")
-      ?.textContent;
-
-    // continue if broadcaster match "J SPORTS \d"
-    if (broadcaster?.match(/J SPORTS \d/)) {
-      continue;
-    }
-
-    // continue if broadcaster is "DAZN"
-    if (broadcaster === "DAZN") {
-      continue;
-    }
-
-    // continue if broadcaster is "J SPORTSオンデマンド"
-    if (broadcaster === "J SPORTSオンデマンド") {
-      continue;
-    }
-
-    // continue if broadcaster is "虎テレ" if TORA_TV is not true
-    const TORA_TV = Deno.env.get("TORA_TV") === "true";
-    if (!TORA_TV && broadcaster === "虎テレ") {
-      continue;
-    }
+      ?.textContent ?? "";
 
     // get label img alt from trElement > td.timetable > img
     const label = trElement?.querySelector("td.timetable > img")
-      ?.getAttribute("alt");
-
-    // continue if label is "録画"
-    if (label === "録画") {
-      continue;
-    }
+      ?.getAttribute("alt") ?? "";
 
     // get timetable from trElement > td.timetable textContent
-    const timetable = trElement?.querySelector("td.timetable")?.textContent;
+    const timetable = trElement?.querySelector("td.timetable")?.textContent ?? "";
 
     // get description url from trElement > td:nth-child(4) > a.href
     const descriptionUrl = DESCRIPTION_URL_PREFIX +
       trElement?.querySelector("td:nth-child(4) > a")?.getAttribute("href");
 
-    // get description from description url
-    const descriptionRes = await fetch(descriptionUrl);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const descriptionHtml = await descriptionRes.text();
+    let descriptionDetail = "";
+    if (fetchDetail) {
+      // get description from description url
+      const descriptionRes = await fetch(descriptionUrl);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const descriptionHtml = await descriptionRes.text();
 
-    const descriptionDoc = new DOMParser().parseFromString(
-      descriptionHtml,
-      "text/html",
-    );
-    // get descriptionDetail from p.media-detail-note
-    const descriptionDetail = descriptionDoc?.querySelector(
-      "p.media-detail-note",
-    )?.innerText.replaceAll("\n", " ");
+      const descriptionDoc = new DOMParser().parseFromString(
+        descriptionHtml,
+        "text/html",
+      );
+      // get descriptionDetail from p.media-detail-note
+      descriptionDetail = descriptionDoc?.querySelector(
+        "p.media-detail-note",
+      )?.innerText.replaceAll("\n", " ") ?? "";
+    }
 
     // create LiveInfo object from above information
     const liveInfo: LiveInfo = {
       date: date!,
-      broadcastType: broadcastType ?? "",
-      broadcaster: broadcaster ?? "",
-      label: label ?? "",
-      timetable: timetable ?? "",
-      descriptionUrl: descriptionUrl,
-      descriptionDetail: descriptionDetail ?? "",
-      isFarm: isFarm,
+      broadcastType,
+      broadcaster,
+      label,
+      timetable,
+      descriptionUrl,
+      descriptionDetail,
+      isFarm,
     };
 
     // log liveInfo
@@ -121,7 +93,42 @@ async function getEachLiveInfo(isFarm: boolean, liveElement: Element): Promise<L
   return result;
 }
 
-export async function getRecentTigersLiveList(liveListUrl: string): Promise<LiveInfo[]> {
+function filterLiveInfo(liveInfo: LiveInfo): boolean {
+  // broadcast type is "CS"
+  if (liveInfo.broadcastType === "CS") {
+    return false;
+  }
+
+  // broadcaster match "J SPORTS \d"
+  if (liveInfo.broadcaster.match(/J SPORTS \d/)) {
+    return false;
+  }
+
+  // broadcaster is "DAZN"
+  if (liveInfo.broadcaster === "DAZN") {
+    return false;
+  }
+
+  // broadcaster is "J SPORTSオンデマンド"
+  if (liveInfo.broadcaster === "J SPORTSオンデマンド") {
+    return false;
+  }
+
+  // broadcaster is "虎テレ" if TORA_TV is not true
+  const TORA_TV = Deno.env.get("TORA_TV") === "true";
+  if (!TORA_TV && liveInfo.broadcaster === "虎テレ") {
+    return false;
+  }
+
+  // label is "録画"
+  if (liveInfo.label === "録画") {
+    return false;
+  }
+
+  return true;
+}
+
+export async function getRecentTigersLiveList(liveListUrl: string, fetchDetail = false): Promise<LiveInfo[]> {
   // define result array
   const result: LiveInfo[] = [];
 
@@ -138,7 +145,7 @@ export async function getRecentTigersLiveList(liveListUrl: string): Promise<Live
   const recentLiveListArray = Array.from(recentLiveList);
 
   for (const recentLiveList of recentLiveListArray) {
-    const liveInfo = await getEachLiveInfo(liveListUrl === TIGERS2_LIVE_LIST_URL, recentLiveList as Element);
+    const liveInfo = await getEachLiveInfo(liveListUrl === TIGERS2_LIVE_LIST_URL, recentLiveList as Element, fetchDetail);
     // push liveInfo to result array
     result.push(...liveInfo);
   }
@@ -184,7 +191,7 @@ async function addTask(api: TodoistApi, task: Parameters<TodoistApi["addTask"]>[
 }
 
 async function main() {
-  const liveList1 = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL);
+  const liveList1 = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL, true);
   // const liveList2 = await getRecentTigersLiveList(TIGERS2_LIVE_LIST_URL);
   // const liveList = liveList1.concat(liveList2);
   const api = new TodoistApi(Deno.env.get("TODOIST_API_TOKEN") as string);
@@ -206,7 +213,9 @@ async function main() {
   });
   console.log(existingTaskBroadcastIds);
 
-  for (const liveInfo of liveList1) {
+  const filteredLiveList = liveList1.filter(filterLiveInfo);
+
+  for (const liveInfo of filteredLiveList) {
     // check if liveInfo is already in Todoist
     const descriptionUrl = liveInfo.descriptionUrl;
     if (existingTaskBroadcastIds.includes(descriptionUrl)) {
@@ -232,15 +241,55 @@ if (import.meta.main) {
     await main();
   });
 
+  // ポート番号の取得 (環境変数 PORT または CLI引数 --port, -p から。デフォルトは 8000)
+  let port = 8000;
+  const portEnv = Deno.env.get("PORT");
+  if (portEnv) {
+    const parsed = parseInt(portEnv, 10);
+    if (!isNaN(parsed)) {
+      port = parsed;
+    }
+  }
+
+  for (let i = 0; i < Deno.args.length; i++) {
+    if (Deno.args[i] === "--port" || Deno.args[i] === "-p") {
+      const nextArg = Deno.args[i + 1];
+      if (nextArg) {
+        const parsed = parseInt(nextArg, 10);
+        if (!isNaN(parsed)) {
+          port = parsed;
+        }
+      }
+    }
+  }
+
   // Deno Deployでデプロイメントをアクティブに保ち、
   // ヘルスチェックを可能にするためのダミーサーバー
-  Deno.serve((_req) => {
-    return new Response(
-      "SportsNavi News Fetcher is running. Cron schedule: 0 19 * * *",
-      {
-        status: 200,
-        headers: { "Content-Type": "text/plain" },
-      },
-    );
+  Deno.serve({ port }, async (_req) => {
+    try {
+      const url = new URL(_req.url);
+      const fetchDetail = url.searchParams.get("detail") === "true";
+      const liveList = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL, fetchDetail);
+      return new Response(
+        JSON.stringify(liveList, null, 2),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+          },
+        },
+      );
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return new Response(
+        JSON.stringify({ error: message }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+          },
+        },
+      );
+    }
   });
 }
