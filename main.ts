@@ -52,8 +52,10 @@ async function getEachLiveInfo(isFarm: boolean, liveElement: Element, fetchDetai
     const timetable = trElement?.querySelector("td.timetable")?.textContent ?? "";
 
     // get description url from trElement > td:nth-child(4) > a.href
-    const descriptionUrl = DESCRIPTION_URL_PREFIX +
-      trElement?.querySelector("td:nth-child(4) > a")?.getAttribute("href");
+    // 詳細URLが未登録の場合はスキップ（後から追加されると重複登録の原因になる）
+    const href = trElement?.querySelector("td:nth-child(4) > a")?.getAttribute("href");
+    if (!href) continue;
+    const descriptionUrl = DESCRIPTION_URL_PREFIX + href;
 
     let descriptionDetail = "";
     if (fetchDetail) {
