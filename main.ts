@@ -7,6 +7,7 @@ import {
   TodoistRequestError,
 } from "npm:@doist/todoist-api-typescript@latest";
 import "https://deno.land/x/dotenv@v3.2.2/load.ts";
+import { logger } from "./logger.ts";
 
 const TIGERS1_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/live.html";
 const TIGERS2_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/farmlive.html";
@@ -87,7 +88,15 @@ async function getEachLiveInfo(isFarm: boolean, liveElement: Element, fetchDetai
     };
 
     // log liveInfo
-    console.info(liveInfo);
+    logger.info("Fetched live info", {
+      date: liveInfo.date,
+      broadcastType: liveInfo.broadcastType,
+      broadcaster: liveInfo.broadcaster,
+      label: liveInfo.label,
+      timetable: liveInfo.timetable,
+      descriptionUrl: liveInfo.descriptionUrl,
+      isFarm: liveInfo.isFarm,
+    });
 
     result.push(liveInfo);
   }
@@ -179,16 +188,19 @@ function createDescription(liveInfo: LiveInfo): string {
 // add task to Todoist function
 async function addTask(api: TodoistApi, task: Parameters<TodoistApi["addTask"]>[0]): Promise<void> {
   try {
-    console.info(task);
+    logger.info("Adding task to Todoist", { task: task as unknown as Record<string, unknown> });
     await api.addTask(task);
   } catch (e) {
     if (e instanceof TodoistRequestError) {
-      console.error(
-        `${e.message}, ${e.httpStatusCode}, ${e.responseData}, isAuthError: ${e.isAuthenticationError()} `,
-      );
+      logger.error("Todoist request error", e, {
+        httpStatusCode: e.httpStatusCode,
+        responseData: e.responseData,
+        isAuthError: e.isAuthenticationError(),
+      });
     } else {
-      throw e;
+      logger.error("Unexpected error in addTask", e);
     }
+    throw e;
   }
 }
 
@@ -213,7 +225,10 @@ async function main() {
     const match = description?.match(/https:\/\/hanshintigers\.jp\/news\/media\/live\d+\.html/);
     return match ? match[0] : null;
   });
-  console.log(existingTaskBroadcastIds);
+  logger.info("Fetched existing task broadcast IDs", {
+    count: existingTasks.length,
+    existingBroadcastUrls: existingTaskBroadcastIds,
+  });
 
   const filteredLiveList = liveList1.filter(filterLiveInfo);
 
@@ -221,7 +236,10 @@ async function main() {
     // check if liveInfo is already in Todoist
     const descriptionUrl = liveInfo.descriptionUrl;
     if (existingTaskBroadcastIds.includes(descriptionUrl)) {
-      console.info("Already exists in Todoist.");
+      logger.info("Task already exists in Todoist", {
+        descriptionUrl,
+        content: createContent(liveInfo),
+      });
       continue;
     }
 
@@ -239,8 +257,15 @@ async function main() {
 // メインの処理
 if (import.meta.main) {
   Deno.cron("Get todays live information for tigers", "0 19 * * *", async () => {
-    console.info("Start crawling.");
-    await main();
+    logger.info("Start crawling");
+    try {
+      await main();
+      logger.info("Crawling completed successfully");
+    } catch (e) {
+      logger.error("Crawling failed", e);
+    } finally {
+      await logger.flush();
+    }
   });
 
   // ポート番号の取得 (環境変数 PORT または CLI引数 --port, -p から。デフォルトは 8000)
@@ -271,6 +296,11 @@ if (import.meta.main) {
     try {
       const url = new URL(_req.url);
       const fetchDetail = url.searchParams.get("detail") === "true";
+      logger.info("Handling HTTP request", {
+        path: url.pathname,
+        method: _req.method,
+        fetchDetail,
+      });
       const liveList = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL, fetchDetail);
       return new Response(
         JSON.stringify(liveList, null, 2),
@@ -283,6 +313,7 @@ if (import.meta.main) {
       );
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      logger.error("HTTP request handling failed", e);
       return new Response(
         JSON.stringify({ error: message }),
         {
@@ -292,6 +323,8 @@ if (import.meta.main) {
           },
         },
       );
+    } finally {
+      await logger.flush();
     }
   });
 }
