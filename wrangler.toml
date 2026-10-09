@@ -1,0 +1,16 @@
+name = "tigers"
+main = "src/index.ts"
+compatibility_date = "2026-10-09"
+compatibility_flags = [ "nodejs_compat" ]
+
+routes = [
+  { pattern = "tigers.gunjobiyori.com", custom_domain = true }
+]
+
+[triggers]
+crons = [ "0 19 * * *" ]
+
+[vars]
+RUN_MAIN_PROCESS = "true"
+TORA_TV = "true"
+AXIOM_DATASET = "personal-apps"

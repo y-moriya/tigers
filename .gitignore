@@ -1,1 +1,7 @@
+node_modules/
+.wrangler/
+.cloudflare/
 .env
+.dev.vars
+dist/
+decisions.tsv

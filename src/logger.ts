@@ -54,17 +54,30 @@ export class Logger {
 
   constructor(appName: string, options: LoggerOptions = {}) {
     this.appName = appName;
-    this.options = options;
+    this.options = { ...options };
     this.batchSize = options.batchSize ?? 50;
     this.flushIntervalMs = options.flushIntervalMs ?? 2000;
   }
 
+  configure(options: Partial<LoggerOptions>): void {
+    this.options = { ...this.options, ...options };
+    if (options.batchSize !== undefined) {
+      this.batchSize = options.batchSize;
+    }
+    if (options.flushIntervalMs !== undefined) {
+      this.flushIntervalMs = options.flushIntervalMs;
+    }
+  }
+
   private safeGetEnv(key: string): string | undefined {
     try {
-      return Deno.env.get(key);
+      if (typeof process !== "undefined" && process.env) {
+        return process.env[key];
+      }
     } catch {
-      return undefined;
+      // Ignore errors when accessing process.env
     }
+    return undefined;
   }
 
   private getToken(): string | undefined {
