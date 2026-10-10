@@ -4,6 +4,7 @@ import {
   createContent,
   createDueString,
   createDescription,
+  sanitizeProjectId,
   type LiveInfo,
 } from "./index.js";
 
@@ -134,4 +135,29 @@ describe("Tigers live info functions", () => {
       }
     });
   });
+
+  describe("sanitizeProjectId", () => {
+    it("keeps clean Base32 project ID as is", () => {
+      expect(sanitizeProjectId("6PRwRfhCxvcWXwPQ")).toBe("6PRwRfhCxvcWXwPQ");
+    });
+
+    it("extracts ID from slug with project name prefix", () => {
+      expect(sanitizeProjectId("tigers-6PRwRfhCxvcWXwPQ")).toBe("6PRwRfhCxvcWXwPQ");
+    });
+
+    it("extracts ID from full Todoist URL", () => {
+      expect(
+        sanitizeProjectId("https://app.todoist.com/app/project/tigers-6PRwRfhCxvcWXwPQ")
+      ).toBe("6PRwRfhCxvcWXwPQ");
+    });
+
+    it("handles whitespace and query parameters", () => {
+      expect(sanitizeProjectId("  6PRwRfhCxvcWXwPQ?view=list  ")).toBe("6PRwRfhCxvcWXwPQ");
+    });
+
+    it("handles legacy numeric project IDs", () => {
+      expect(sanitizeProjectId("28316311")).toBe("28316311");
+    });
+  });
 });
+

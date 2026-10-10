@@ -204,30 +204,59 @@ export async function addTask(
   }
 }
 
+/**
+ * Sanitize Todoist project ID.
+ * Extracts the base32 ID if a slug or URL was provided (e.g., "tigers-6PRwRfhCxvcWXwPQ" -> "6PRwRfhCxvcWXwPQ").
+ */
+export function sanitizeProjectId(projectId: string): string {
+  const trimmed = projectId.trim();
+  const clean = trimmed.split(/[?#]/)[0];
+  const parts = clean.split(/[/_-]/);
+  const lastPart = parts[parts.length - 1];
+  if (lastPart && /^[0-9A-Za-z]+$/.test(lastPart)) {
+    return lastPart;
+  }
+  return trimmed;
+}
+
 export async function crawlAndSync(env: Env): Promise<{ syncedCount: number; skippedCount: number }> {
   const token = env.TODOIST_API_TOKEN;
-  const projectId = env.TODOIST_TIGERS_PROJECT_ID;
+  const rawProjectId = env.TODOIST_TIGERS_PROJECT_ID;
 
   if (!token || token === "YOUR_API_TOKEN") {
     logger.warn("TODOIST_API_TOKEN is not configured. Skipping Todoist sync.");
     return { syncedCount: 0, skippedCount: 0 };
   }
 
-  if (!projectId || projectId === "YOUR_PROJECT_ID") {
+  if (!rawProjectId || rawProjectId === "YOUR_PROJECT_ID") {
     logger.warn("TODOIST_TIGERS_PROJECT_ID is not configured. Skipping Todoist sync.");
     return { syncedCount: 0, skippedCount: 0 };
   }
 
+  const projectId = sanitizeProjectId(rawProjectId);
   const liveList1 = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL, true);
   const api = new TodoistApi(token);
 
   const existingTasks = [];
   let cursor: string | null | undefined = undefined;
-  do {
-    const response = await api.getTasks({ projectId, cursor: cursor ?? undefined });
-    existingTasks.push(...response.results);
-    cursor = response.nextCursor;
-  } while (cursor);
+  try {
+    do {
+      const response = await api.getTasks({ projectId, cursor: cursor ?? undefined });
+      existingTasks.push(...response.results);
+      cursor = response.nextCursor;
+    } while (cursor);
+  } catch (e) {
+    if (e instanceof TodoistRequestError) {
+      logger.error("Failed to fetch existing tasks from Todoist", e, {
+        projectId,
+        rawProjectId,
+        httpStatusCode: e.httpStatusCode,
+        responseData: e.responseData,
+        isAuthError: e.isAuthenticationError(),
+      });
+    }
+    throw e;
+  }
 
   const existingTaskBroadcastIds = existingTasks.map((task) => {
     const description = task.description;
