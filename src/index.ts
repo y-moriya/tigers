@@ -219,86 +219,7 @@ export function sanitizeProjectId(projectId: string): string {
   return trimmed;
 }
 
-export function extractBroadcastUrl(description?: string | null): string | null {
-  if (!description) return null;
-  const match = description.match(/https:\/\/hanshintigers\.jp\/news\/media\/live\d+\.html/);
-  return match ? match[0] : null;
-}
-
-export async function fetchExistingBroadcastUrls(
-  api: TodoistApi,
-  projectId: string,
-  options?: { rawProjectId?: string; completedDays?: number },
-): Promise<Set<string>> {
-  const existingBroadcastUrls = new Set<string>();
-
-  let cursor: string | null | undefined = undefined;
-  try {
-    do {
-      const response = await api.getTasks({ projectId, cursor: cursor ?? undefined });
-      for (const task of response.results) {
-        const url = extractBroadcastUrl(task.description);
-        if (url) {
-          existingBroadcastUrls.add(url);
-        }
-      }
-      cursor = response.nextCursor;
-    } while (cursor);
-  } catch (e) {
-    if (e instanceof TodoistRequestError) {
-      logger.error("Failed to fetch existing tasks from Todoist", e, {
-        projectId,
-        rawProjectId: options?.rawProjectId,
-        httpStatusCode: e.httpStatusCode,
-        responseData: e.responseData,
-        isAuthError: e.isAuthenticationError(),
-      });
-    }
-    throw e;
-  }
-
-  const completedDays = options?.completedDays ?? 60;
-  const now = new Date();
-  const until = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-  const since = new Date(now.getTime() - completedDays * 24 * 60 * 60 * 1000).toISOString();
-
-  let completedCursor: string | null | undefined = undefined;
-  try {
-    do {
-      const response = await api.getCompletedTasksByCompletionDate({
-        projectId,
-        since,
-        until,
-        cursor: completedCursor ?? undefined,
-      });
-      for (const task of response.items) {
-        const url = extractBroadcastUrl(task.description);
-        if (url) {
-          existingBroadcastUrls.add(url);
-        }
-      }
-      completedCursor = response.nextCursor;
-    } while (completedCursor);
-  } catch (e) {
-    if (e instanceof TodoistRequestError) {
-      logger.error("Failed to fetch completed tasks from Todoist", e, {
-        projectId,
-        rawProjectId: options?.rawProjectId,
-        httpStatusCode: e.httpStatusCode,
-        responseData: e.responseData,
-        isAuthError: e.isAuthenticationError(),
-      });
-    }
-    throw e;
-  }
-
-  return existingBroadcastUrls;
-}
-
-export async function crawlAndSync(
-  env: Env,
-  api?: TodoistApi,
-): Promise<{ syncedCount: number; skippedCount: number }> {
+export async function crawlAndSync(env: Env): Promise<{ syncedCount: number; skippedCount: number }> {
   const token = env.TODOIST_API_TOKEN;
   const rawProjectId = env.TODOIST_TIGERS_PROJECT_ID;
 
@@ -314,14 +235,37 @@ export async function crawlAndSync(
 
   const projectId = sanitizeProjectId(rawProjectId);
   const liveList1 = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL, true);
-  const todoistApi = api ?? new TodoistApi(token);
+  const api = new TodoistApi(token);
 
-  const existingTaskBroadcastIds = await fetchExistingBroadcastUrls(todoistApi, projectId, {
-    rawProjectId,
+  const existingTasks = [];
+  let cursor: string | null | undefined = undefined;
+  try {
+    do {
+      const response = await api.getTasks({ projectId, cursor: cursor ?? undefined });
+      existingTasks.push(...response.results);
+      cursor = response.nextCursor;
+    } while (cursor);
+  } catch (e) {
+    if (e instanceof TodoistRequestError) {
+      logger.error("Failed to fetch existing tasks from Todoist", e, {
+        projectId,
+        rawProjectId,
+        httpStatusCode: e.httpStatusCode,
+        responseData: e.responseData,
+        isAuthError: e.isAuthenticationError(),
+      });
+    }
+    throw e;
+  }
+
+  const existingTaskBroadcastIds = existingTasks.map((task) => {
+    const description = task.description;
+    const match = description?.match(/https:\/\/hanshintigers\.jp\/news\/media\/live\d+\.html/);
+    return match ? match[0] : null;
   });
   logger.info("Fetched existing task broadcast IDs", {
-    count: existingTaskBroadcastIds.size,
-    existingBroadcastUrls: Array.from(existingTaskBroadcastIds),
+    count: existingTasks.length,
+    existingBroadcastUrls: existingTaskBroadcastIds,
   });
 
   const toraTv = env.TORA_TV === "true";
@@ -332,7 +276,7 @@ export async function crawlAndSync(
 
   for (const liveInfo of filteredLiveList) {
     const descriptionUrl = liveInfo.descriptionUrl;
-    if (existingTaskBroadcastIds.has(descriptionUrl)) {
+    if (existingTaskBroadcastIds.includes(descriptionUrl)) {
       logger.info("Task already exists in Todoist", {
         descriptionUrl,
         content: createContent(liveInfo),
@@ -347,7 +291,7 @@ export async function crawlAndSync(
       description: createDescription(liveInfo),
       projectId,
     };
-    await addTask(todoistApi, task);
+    await addTask(api, task);
     syncedCount++;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
