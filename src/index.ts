@@ -1,8 +1,4 @@
 import { DOMParser } from "linkedom";
-import {
-  TodoistApi,
-  TodoistRequestError,
-} from "@doist/todoist-api-typescript";
 import { logger } from "./logger.js";
 
 const TIGERS1_LIVE_LIST_URL = "https://hanshintigers.jp/news/media/live.html";
@@ -22,10 +18,6 @@ export interface LiveInfo {
 }
 
 export interface Env {
-  TODOIST_API_TOKEN?: string;
-  TODOIST_TIGERS_PROJECT_ID?: string;
-  RUN_MAIN_PROCESS?: string;
-  TORA_TV?: string;
   AXIOM_DATASET?: string;
   AXIOM_TOKEN?: string;
 }
@@ -168,193 +160,6 @@ export async function getRecentTigersLiveList(
   return result;
 }
 
-export function createContent(liveInfo: LiveInfo): string {
-  const farmStr = liveInfo.isFarm ? "2軍" : "1軍";
-  return `${liveInfo.broadcaster} ${liveInfo.date} ${farmStr}`;
-}
-
-export function createDueString(liveInfo: LiveInfo): string {
-  const date = liveInfo.date.split(" ")[0];
-  const time = liveInfo.timetable.split("-")[0];
-  return `${date} @${time} `;
-}
-
-export function createDescription(liveInfo: LiveInfo): string {
-  return `${liveInfo.timetable} \n${liveInfo.descriptionDetail} \n${liveInfo.descriptionUrl}`;
-}
-
-export async function addTask(
-  api: TodoistApi,
-  task: Parameters<TodoistApi["addTask"]>[0],
-): Promise<void> {
-  try {
-    logger.info("Adding task to Todoist", { task: task as unknown as Record<string, unknown> });
-    await api.addTask(task);
-  } catch (e) {
-    if (e instanceof TodoistRequestError) {
-      logger.error("Todoist request error", e, {
-        httpStatusCode: e.httpStatusCode,
-        responseData: e.responseData,
-        isAuthError: e.isAuthenticationError(),
-      });
-    } else {
-      logger.error("Unexpected error in addTask", e);
-    }
-    throw e;
-  }
-}
-
-/**
- * Sanitize Todoist project ID.
- * Extracts the base32 ID if a slug or URL was provided (e.g., "tigers-6PRwRfhCxvcWXwPQ" -> "6PRwRfhCxvcWXwPQ").
- */
-export function sanitizeProjectId(projectId: string): string {
-  const trimmed = projectId.trim();
-  const clean = trimmed.split(/[?#]/)[0];
-  const parts = clean.split(/[/_-]/);
-  const lastPart = parts[parts.length - 1];
-  if (lastPart && /^[0-9A-Za-z]+$/.test(lastPart)) {
-    return lastPart;
-  }
-  return trimmed;
-}
-
-export function extractBroadcastUrl(description?: string | null): string | null {
-  if (!description) return null;
-  const match = description.match(/https:\/\/hanshintigers\.jp\/news\/media\/live\d+\.html/);
-  return match ? match[0] : null;
-}
-
-export async function fetchExistingBroadcastUrls(
-  api: TodoistApi,
-  projectId: string,
-  options?: { rawProjectId?: string; completedDays?: number },
-): Promise<Set<string>> {
-  const existingBroadcastUrls = new Set<string>();
-
-  let cursor: string | null | undefined = undefined;
-  try {
-    do {
-      const response = await api.getTasks({ projectId, cursor: cursor ?? undefined });
-      for (const task of response.results) {
-        const url = extractBroadcastUrl(task.description);
-        if (url) {
-          existingBroadcastUrls.add(url);
-        }
-      }
-      cursor = response.nextCursor;
-    } while (cursor);
-  } catch (e) {
-    if (e instanceof TodoistRequestError) {
-      logger.error("Failed to fetch existing tasks from Todoist", e, {
-        projectId,
-        rawProjectId: options?.rawProjectId,
-        httpStatusCode: e.httpStatusCode,
-        responseData: e.responseData,
-        isAuthError: e.isAuthenticationError(),
-      });
-    }
-    throw e;
-  }
-
-  const completedDays = options?.completedDays ?? 60;
-  const now = new Date();
-  const until = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-  const since = new Date(now.getTime() - completedDays * 24 * 60 * 60 * 1000).toISOString();
-
-  let completedCursor: string | null | undefined = undefined;
-  try {
-    do {
-      const response = await api.getCompletedTasksByCompletionDate({
-        projectId,
-        since,
-        until,
-        cursor: completedCursor ?? undefined,
-      });
-      for (const task of response.items) {
-        const url = extractBroadcastUrl(task.description);
-        if (url) {
-          existingBroadcastUrls.add(url);
-        }
-      }
-      completedCursor = response.nextCursor;
-    } while (completedCursor);
-  } catch (e) {
-    if (e instanceof TodoistRequestError) {
-      logger.error("Failed to fetch completed tasks from Todoist", e, {
-        projectId,
-        rawProjectId: options?.rawProjectId,
-        httpStatusCode: e.httpStatusCode,
-        responseData: e.responseData,
-        isAuthError: e.isAuthenticationError(),
-      });
-    }
-    throw e;
-  }
-
-  return existingBroadcastUrls;
-}
-
-export async function crawlAndSync(
-  env: Env,
-  api?: TodoistApi,
-): Promise<{ syncedCount: number; skippedCount: number }> {
-  const token = env.TODOIST_API_TOKEN;
-  const rawProjectId = env.TODOIST_TIGERS_PROJECT_ID;
-
-  if (!token || token === "YOUR_API_TOKEN") {
-    logger.warn("TODOIST_API_TOKEN is not configured. Skipping Todoist sync.");
-    return { syncedCount: 0, skippedCount: 0 };
-  }
-
-  if (!rawProjectId || rawProjectId === "YOUR_PROJECT_ID") {
-    logger.warn("TODOIST_TIGERS_PROJECT_ID is not configured. Skipping Todoist sync.");
-    return { syncedCount: 0, skippedCount: 0 };
-  }
-
-  const projectId = sanitizeProjectId(rawProjectId);
-  const liveList1 = await getRecentTigersLiveList(TIGERS1_LIVE_LIST_URL, true);
-  const todoistApi = api ?? new TodoistApi(token);
-
-  const existingTaskBroadcastIds = await fetchExistingBroadcastUrls(todoistApi, projectId, {
-    rawProjectId,
-  });
-  logger.info("Fetched existing task broadcast IDs", {
-    count: existingTaskBroadcastIds.size,
-    existingBroadcastUrls: Array.from(existingTaskBroadcastIds),
-  });
-
-  const toraTv = env.TORA_TV === "true";
-  const filteredLiveList = liveList1.filter((info) => filterLiveInfo(info, toraTv));
-
-  let syncedCount = 0;
-  let skippedCount = 0;
-
-  for (const liveInfo of filteredLiveList) {
-    const descriptionUrl = liveInfo.descriptionUrl;
-    if (existingTaskBroadcastIds.has(descriptionUrl)) {
-      logger.info("Task already exists in Todoist", {
-        descriptionUrl,
-        content: createContent(liveInfo),
-      });
-      skippedCount++;
-      continue;
-    }
-
-    const task = {
-      content: createContent(liveInfo),
-      dueString: createDueString(liveInfo),
-      description: createDescription(liveInfo),
-      projectId,
-    };
-    await addTask(todoistApi, task);
-    syncedCount++;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-
-  return { syncedCount, skippedCount };
-}
-
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     logger.configure({
@@ -388,30 +193,6 @@ export default {
           "Content-Type": "application/json; charset=utf-8",
         },
       });
-    } finally {
-      ctx.waitUntil(logger.flush());
-    }
-  },
-
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    logger.configure({
-      token: env.AXIOM_TOKEN,
-      dataset: env.AXIOM_DATASET,
-    });
-
-    logger.info("Start crawling from scheduled event", {
-      cron: event.cron,
-      scheduledTime: event.scheduledTime,
-    });
-
-    try {
-      const result = await crawlAndSync(env);
-      logger.info("Crawling completed successfully", {
-        syncedCount: result.syncedCount,
-        skippedCount: result.skippedCount,
-      });
-    } catch (e) {
-      logger.error("Crawling failed", e);
     } finally {
       ctx.waitUntil(logger.flush());
     }
