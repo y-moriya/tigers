@@ -149,6 +149,7 @@ describe("Tigers live info functions", () => {
         const res = await worker.fetch(req, env, ctx);
         expect(res.status).toBe(200);
         expect(res.headers.get("Content-Type")).toBe("application/json; charset=utf-8");
+        expect(res.headers.get("Cache-Control")).toBe("public, max-age=1800, s-maxage=3600");
 
         const data = (await res.json()) as LiveInfo[];
         expect(Array.isArray(data)).toBe(true);
