@@ -182,6 +182,7 @@ export default {
         status: 200,
         headers: {
           "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "public, max-age=1800, s-maxage=3600",
         },
       });
     } catch (e) {
