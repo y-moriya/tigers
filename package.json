@@ -10,7 +10,6 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@doist/todoist-api-typescript": "^6.5.0",
     "linkedom": "^0.18.9"
   },
   "devDependencies": {

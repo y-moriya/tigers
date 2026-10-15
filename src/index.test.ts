@@ -1,10 +1,6 @@
-import { describe, it, expect } from "vitest";
-import {
+import { describe, it, expect, vi } from "vitest";
+import worker, {
   filterLiveInfo,
-  createContent,
-  createDueString,
-  createDescription,
-  sanitizeProjectId,
   type LiveInfo,
 } from "./index.js";
 
@@ -19,22 +15,6 @@ describe("Tigers live info functions", () => {
     descriptionDetail: "阪神タイガース対巨人戦中継",
     isFarm: false,
   };
-
-  it("createContent formats broadcaster, date and 1軍/2軍", () => {
-    expect(createContent(sampleLiveInfo)).toBe("サンテレビ 2026/10/10 (土) 1軍");
-
-    const farmInfo = { ...sampleLiveInfo, isFarm: true };
-    expect(createContent(farmInfo)).toBe("サンテレビ 2026/10/10 (土) 2軍");
-  });
-
-  it("createDueString extracts date and start time", () => {
-    expect(createDueString(sampleLiveInfo)).toBe("2026/10/10 @18:00 ");
-  });
-
-  it("createDescription formats timetable, descriptionDetail and url", () => {
-    const desc = createDescription(sampleLiveInfo);
-    expect(desc).toBe("18:00-21:00 \n阪神タイガース対巨人戦中継 \nhttps://hanshintigers.jp/news/media/live12345.html");
-  });
 
   describe("filterLiveInfo", () => {
     it("allows standard terrestrial broadcast", () => {
@@ -136,28 +116,67 @@ describe("Tigers live info functions", () => {
     });
   });
 
-  describe("sanitizeProjectId", () => {
-    it("keeps clean Base32 project ID as is", () => {
-      expect(sanitizeProjectId("6PRwRfhCxvcWXwPQ")).toBe("6PRwRfhCxvcWXwPQ");
+  describe("HTTP fetch handler", () => {
+    it("responds with 200 and JSON live list", async () => {
+      const mockHtml = `
+        <html><body>
+          <div class="media-list clearfix">
+            <div class="air-date">2026/10/15 (木)</div>
+            <table class="basic-table">
+              <tbody>
+                <tr>
+                  <td>地上波</td>
+                  <td>サンテレビ</td>
+                  <td class="timetable"><img alt="生中継" />18:00-21:30</td>
+                  <td><a href="/news/media/live001.html">詳細</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </body></html>
+      `;
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = ((input: string | URL | Request) => {
+        return Promise.resolve(new Response(mockHtml, { status: 200 }));
+      }) as typeof globalThis.fetch;
+
+      try {
+        const req = new Request("https://tigers.gunjobiyori.com/");
+        const env = {};
+        const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
+
+        const res = await worker.fetch(req, env, ctx);
+        expect(res.status).toBe(200);
+        expect(res.headers.get("Content-Type")).toBe("application/json; charset=utf-8");
+
+        const data = (await res.json()) as LiveInfo[];
+        expect(Array.isArray(data)).toBe(true);
+        expect(data[0]?.broadcaster).toBe("サンテレビ");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
 
-    it("extracts ID from slug with project name prefix", () => {
-      expect(sanitizeProjectId("tigers-6PRwRfhCxvcWXwPQ")).toBe("6PRwRfhCxvcWXwPQ");
-    });
+    it("returns 500 JSON error when scraping fails", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (() => {
+        return Promise.reject(new Error("Network connection error"));
+      }) as typeof globalThis.fetch;
 
-    it("extracts ID from full Todoist URL", () => {
-      expect(
-        sanitizeProjectId("https://app.todoist.com/app/project/tigers-6PRwRfhCxvcWXwPQ")
-      ).toBe("6PRwRfhCxvcWXwPQ");
-    });
+      try {
+        const req = new Request("https://tigers.gunjobiyori.com/");
+        const env = {};
+        const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
 
-    it("handles whitespace and query parameters", () => {
-      expect(sanitizeProjectId("  6PRwRfhCxvcWXwPQ?view=list  ")).toBe("6PRwRfhCxvcWXwPQ");
-    });
+        const res = await worker.fetch(req, env, ctx);
+        expect(res.status).toBe(500);
 
-    it("handles legacy numeric project IDs", () => {
-      expect(sanitizeProjectId("28316311")).toBe("28316311");
+        const data = await res.json();
+        expect(data).toEqual({ error: "Network connection error" });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 });
-
